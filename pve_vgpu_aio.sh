@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # PVE AIO vGPU 一键部署脚本 v2.1
-# 适配: Proxmox VE 8.3 | NVIDIA vGPU 535.216.01 (16.8 LTS) | Debian 12 Bookworm | Pascal/GTX 1060 优化
+# 适配: Proxmox VE 8.3 | NVIDIA vGPU 550.90.05 | Debian 12 Bookworm | Turing/Ampere/Ada 优化
 #
 # 功能流程:
 #   Phase 0: 环境检测 (PVE版本/GPU型号/内核)
@@ -26,14 +26,16 @@ set -Euo pipefail
 # ========================== 配置区 ==========================
 
 # --- NVIDIA 驱动版本 ---
-# 535.216.01 = vGPU 16.8 LTS, Pascal (GTX 1060) 原生支持, 无需额外配置
-NVIDIA_DRIVER_VER="535.216.01"
-NVIDIA_VGPU_BRANCH="16.8"
+# 550.90.05 = NVIDIA vGPU 17.x Host Driver, 对应补丁 550.90.05.patch
+NVIDIA_DRIVER_VER="550.90.05"
+NVIDIA_VGPU_BRANCH="17.x"
 NVIDIA_DRIVER_FILE="NVIDIA-Linux-x86_64-${NVIDIA_DRIVER_VER}-vgpu-kvm.run"
 NVIDIA_PATCH_FILE="${NVIDIA_DRIVER_VER}.patch"
 
-# --- 驱动下载地址 (geekxw.top 教程提供的直链, sign 有时效, 建议用 IDM 获取最新链接后替换) ---
-DRIVER_DOWNLOAD_URL="https://openlist.geekxw.top/d/NVIDIA-vGPU/NVIDIA-GRID-Linux-KVM-535.216.01-538.95/Host_Drivers/NVIDIA-Linux-x86_64-535.216.01-vgpu-kvm.run?sign=0_kmM8Ir2EbopP3atw7wleZGpSbCEDlt7lIVS33HTPM=:0"
+# --- 驱动下载地址 ---
+# 优先使用脚本同目录下 NVIDIA-GRID-*/Host_Drivers/ 中的本地驱动；
+# 若只 curl 单脚本执行，则回退到 GitHub raw 下载。
+DRIVER_DOWNLOAD_URL="https://github.com/kunkumo/PVE/raw/main/NVIDIA-GRID-Linux-KVM-550.90.05-550.90.07-552.55/Host_Drivers/NVIDIA-Linux-x86_64-550.90.05-vgpu-kvm.run"
 
 # --- 仓库地址 ---
 VGPU_UNLOCK_RS_REPO="https://github.com/mbilker/vgpu_unlock-rs.git"
@@ -53,6 +55,7 @@ VGPU_UNLOCK_DIR="/opt/vgpu_unlock-rs"
 VGPU_PROXMOX_DIR="/opt/vgpu-proxmox"
 STATE_FILE="/root/.pve_vgpu_aio_state"
 DRIVER_CACHE="/root"
+BUNDLED_DRIVER_DIR="NVIDIA-GRID-Linux-KVM-550.90.05-550.90.07-552.55/Host_Drivers"
 
 # --- 模式标志 ---
 APPLY=1
@@ -201,9 +204,9 @@ detect_gpu() {
 
     for dev_id in $dev_ids; do
         case "$dev_id" in
-            # Pascal (GTX 10xx / P4 / P40) — GTX 1060 推荐 535.216.01 + P40 mock profile
+            # Pascal (GTX 10xx / P4 / P40) — 550 系列已移除官方支持，通常建议改用 535.216.01
             1b00|1b02|1b06|1b30|1b80|1b81|1b82|1b83|1b84|1bb0|1bb1|1bb3|1c02|1c03|1c30)
-                info "  → dev $dev_id: Pascal (GTX 10xx / Quadro Pxx), 推荐 535.216.01 + nvidia-vgpu-vfio ✓"
+                warn "  → dev $dev_id: Pascal (GTX 10xx / Quadro Pxx), 550.90.05 可能不支持，建议使用 535.216.01"
                 is_pascal=1 ;;
             # Turing (GTX 16xx / RTX 20xx)
             1f02|1f06|1f07|1f08|1f09|1f0a|1f0b|1e02|1e04|1e07|1e30|1e81|1e82|1e84|1e87|1e89)
@@ -585,6 +588,9 @@ fetch_driver_patch() {
 
 install_nvidia_driver() {
     local driver_path="${DRIVER_CACHE}/${NVIDIA_DRIVER_FILE}"
+    local script_dir bundled_driver
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    bundled_driver="${script_dir}/${BUNDLED_DRIVER_DIR}/${NVIDIA_DRIVER_FILE}"
 
     log "============================================"
     log "  NVIDIA vGPU 驱动安装"
@@ -593,29 +599,35 @@ install_nvidia_driver() {
 
     # 检查驱动文件是否存在，不存在则自动下载
     if [ ! -f "$driver_path" ]; then
-        warn "驱动文件未找到: $driver_path"
-        log "尝试自动下载..."
-
-        if [ -n "${DRIVER_DOWNLOAD_URL:-}" ]; then
-            log "下载地址: ${DRIVER_DOWNLOAD_URL}"
-            if [ "$APPLY" = "1" ]; then
-                wget -q --show-progress -O "$driver_path" "$DRIVER_DOWNLOAD_URL" || {
-                    err "wget 下载失败, 尝试 curl..."
-                    curl -L --progress-bar -o "$driver_path" "$DRIVER_DOWNLOAD_URL" || {
-                        err "自动下载失败! 请手动下载驱动"
-                        err "下载地址: ${DRIVER_DOWNLOAD_URL}"
-                        err "放置到: ${driver_path}"
-                        return 1
-                    }
-                }
-                log "驱动下载完成 ✓"
-            else
-                run_cmd wget -O "$driver_path" "$DRIVER_DOWNLOAD_URL"
-            fi
+        if [ -f "$bundled_driver" ]; then
+            driver_path="$bundled_driver"
+            log "使用随脚本打包的 Host Driver: $driver_path"
         else
-            err "未配置驱动下载地址, 无法自动下载"
-            warn "请手动下载驱动放置到: ${driver_path}"
-            return 1
+            warn "驱动文件未找到: ${DRIVER_CACHE}/${NVIDIA_DRIVER_FILE}"
+            warn "随脚本打包驱动也未找到: $bundled_driver"
+            log "尝试自动下载..."
+
+            if [ -n "${DRIVER_DOWNLOAD_URL:-}" ]; then
+                log "下载地址: ${DRIVER_DOWNLOAD_URL}"
+                if [ "$APPLY" = "1" ]; then
+                    wget -q --show-progress -O "$driver_path" "$DRIVER_DOWNLOAD_URL" || {
+                        err "wget 下载失败, 尝试 curl..."
+                        curl -L --progress-bar -o "$driver_path" "$DRIVER_DOWNLOAD_URL" || {
+                            err "自动下载失败! 请手动下载驱动"
+                            err "下载地址: ${DRIVER_DOWNLOAD_URL}"
+                            err "放置到: ${driver_path}"
+                            return 1
+                        }
+                    }
+                    log "驱动下载完成 ✓"
+                else
+                    run_cmd wget -O "$driver_path" "$DRIVER_DOWNLOAD_URL"
+                fi
+            else
+                err "未配置驱动下载地址, 无法自动下载"
+                warn "请手动下载驱动放置到: ${driver_path}"
+                return 1
+            fi
         fi
     else
         log "驱动文件已找到: $driver_path"
@@ -1054,7 +1066,7 @@ usage() {
   bash $(basename "$0") --detect
 
   # 使用本地已下载的驱动文件
-  bash $(basename "$0") --driver-file /root/NVIDIA-Linux-x86_64-550.144.02-vgpu-kvm.run
+  bash $(basename "$0") --driver-file /root/NVIDIA-Linux-x86_64-550.90.05-vgpu-kvm.run
 
 社区参考:
   - Proxmox Wiki:    https://pve.proxmox.com/wiki/NVIDIA_vGPU_on_Proxmox_VE
@@ -1122,7 +1134,7 @@ main() {
         echo
         banner "╔══════════════════════════════════════════════════════════╗"
         banner "║     PVE AIO vGPU 一键部署 v2.0                           ║"
-        banner "║     目标: Proxmox VE 8.3 + NVIDIA vGPU 535（Pascal 优化）               ║"
+        banner "║     目标: Proxmox VE 8.3 + NVIDIA vGPU 550.90.05                       ║"
         banner "║     模式: 全自动 (Ctrl+C 取消)                            ║"
         banner "╚══════════════════════════════════════════════════════════╝"
         echo
