@@ -33,6 +33,7 @@ CLONE_START="101"
 CLONE_END="106"
 PRESET_NAME="6核/8G/1G/6开"
 BIOS_EXPLICIT=0
+VRAM_EXPLICIT=0
 
 log(){ echo "[$(date '+%F %T')] $*"; }
 err(){ echo "[ERROR] $*" >&2; }
@@ -309,6 +310,69 @@ normalize_bios(){
   esac
 }
 
+select_vram_interactive(){
+  local choice custom
+  {
+    echo
+    echo "请选择 vGPU 显存大小："
+    echo "  1) 1G    适合 6开/轻量使用"
+    echo "  2) 1.2G  适合 5开/稍高显存需求"
+    echo "  3) 2G    适合 3开/较高显存需求"
+    echo "  4) 自定义，例如 512M、1、1200M、2G"
+    echo
+  } > /dev/tty 2>/dev/null || {
+    echo
+    echo "请选择 vGPU 显存大小："
+    echo "  1) 1G    适合 6开/轻量使用"
+    echo "  2) 1.2G  适合 5开/稍高显存需求"
+    echo "  3) 2G    适合 3开/较高显存需求"
+    echo "  4) 自定义，例如 512M、1、1200M、2G"
+    echo
+  }
+
+  while true; do
+    choice="$(ask_tty "请输入 1/2/3/4，直接回车使用套餐默认 ${VGPU_VRAM}: ")"
+    case "${choice:-default}" in
+      default|"")
+        log "使用套餐默认 vGPU 显存: ${VGPU_VRAM}"
+        return 0
+        ;;
+      1)
+        VGPU_VRAM=1
+        log "已选择 vGPU 显存: 1G"
+        return 0
+        ;;
+      2)
+        VGPU_VRAM=1200M
+        log "已选择 vGPU 显存: 1.2G"
+        return 0
+        ;;
+      3)
+        VGPU_VRAM=2
+        log "已选择 vGPU 显存: 2G"
+        return 0
+        ;;
+      4|custom|Custom)
+        custom="$(ask_tty "请输入自定义显存，例如 512M、1、1200M、2G: ")"
+        if [ -n "$custom" ]; then
+          vram_to_mb "$custom" >/dev/null
+          VGPU_VRAM="$custom"
+          log "已选择自定义 vGPU 显存: ${VGPU_VRAM}"
+          return 0
+        fi
+        ;;
+      *)
+        if vram_to_mb "$choice" >/dev/null 2>&1; then
+          VGPU_VRAM="$choice"
+          log "已选择自定义 vGPU 显存: ${VGPU_VRAM}"
+          return 0
+        fi
+        echo "  → 无效选择，请输入 1/2/3/4 或显存值" > /dev/tty 2>/dev/null || echo "  → 无效选择，请输入 1/2/3/4 或显存值"
+        ;;
+    esac
+  done
+}
+
 usage(){
 cat <<'EOF'
 用法：
@@ -330,6 +394,7 @@ cat <<'EOF'
   --data-disk GB        第二块数据盘 sata1，默认 256G
   --storage NAME        PVE 存储，默认 local
   --gpu PCI             指定 NVIDIA GPU PCI；不填则自动选择
+  --vram 1|1200M|2G     指定 vGPU 显存；不指定且可交互时会询问
   --bios ovmf|seabios   指定 BIOS；不指定且可交互时会询问
 EOF
 }
@@ -346,7 +411,7 @@ while [ $# -gt 0 ]; do
     --storage) STORAGE="$2"; shift 2;;
     --gpu) GPU_PCI="$2"; shift 2;;
     --mdev) MDEV_PROFILE="$2"; shift 2;;
-    --vram|--vram-gb) VGPU_VRAM="$2"; shift 2;;
+    --vram|--vram-gb) VGPU_VRAM="$2"; VRAM_EXPLICIT=1; shift 2;;
     --no-gpu) ATTACH_GPU=0; shift;;
     --attach-gpu) ATTACH_GPU=1; shift;;
     --bridge) BRIDGE="$2"; shift 2;;
@@ -376,6 +441,12 @@ else
   normalize_bios
 fi
 
+if [ "$VRAM_EXPLICIT" = "0" ] && [ "$ATTACH_GPU" = "1" ] && { [ "$ORIG_ARGC" = "0" ] || [ "$SHOW_MENU" = "1" ]; } && { [ -t 0 ] || [ -r /dev/tty ]; }; then
+  select_vram_interactive
+else
+  vram_to_mb "$VGPU_VRAM" >/dev/null
+fi
+
 [ "${EUID}" -eq 0 ] || { err "请用 root 执行"; exit 1; }
 command -v qm >/dev/null || { err "未找到 qm，请在 PVE 宿主机执行"; exit 1; }
 if qm status "$VMID" >/dev/null 2>&1; then err "VMID $VMID 已存在"; exit 1; fi
@@ -384,7 +455,7 @@ grep -q "114.114.114.114" /etc/resolv.conf 2>/dev/null || printf "nameserver 114
 resolve_iso
 prepare_disk_models
 
-log "创建母机 VMID=$VMID NAME=$NAME CPU=$CPU MEM=${MEMORY_MB}MB BOOT=${BOOT_DISK_GB}G DATA=${DATA_DISK_GB}G BIOS=${BIOS} MACHINE=${MACHINE}"
+log "创建母机 VMID=$VMID NAME=$NAME CPU=$CPU MEM=${MEMORY_MB}MB BOOT=${BOOT_DISK_GB}G DATA=${DATA_DISK_GB}G BIOS=${BIOS} MACHINE=${MACHINE} vGPU=${VGPU_VRAM}"
 log "硬盘伪装: sata0=${DISK0_MODEL}${DISK1_MODEL:+ / sata1=${DISK1_MODEL}}"
 qm create "$VMID" --name "$NAME" --memory "$MEMORY_MB" --balloon 0 --sockets 1 --cores "$CPU" --cpu host \
   --bios "$BIOS" --machine "$MACHINE" --vga std --numa 0 --ostype "$VM_OSTYPE" \

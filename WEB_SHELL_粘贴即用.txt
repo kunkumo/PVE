@@ -8,7 +8,7 @@ Gitee: https://gitee.com/kunkumo/pve
 - 以下命令都在 PVE 节点的 Web Shell / SSH 里执行。
 - 建议使用 root 用户执行。
 - 命令会先写入国内 DNS，避免 PVE 初始环境无法解析 GitHub。
-- 所有脚本都从你的 GitHub 仓库 main 分支拉取。
+- 所有脚本都从你的 Gitee 仓库 master 分支拉取。
 
 
 ============================================================
@@ -46,7 +46,16 @@ sh -c 'printf "nameserver 114.114.114.114\nnameserver 223.5.5.5\nnameserver 119.
 ============================================================
 04. 创建母机 VM
 用途:
-创建 VMID 100 母机，按脚本里的套餐/默认配置创建 CPU、内存、磁盘、网卡、音频、vGPU 等配置。
+创建 VMID 100 母机，按交互菜单选择套餐、vGPU 显存、BIOS 启动方式，并自动配置 CPU、内存、磁盘、网卡、音频、vGPU 等配置。
+
+交互内容:
+- 套餐：1/A、2/B、3/C
+- vGPU 显存：1G、1.2G、2G 或自定义
+- BIOS：OVMF/UEFI 或 SeaBIOS
+
+提示:
+- 如果创建失败提示找不到 vGPU profile，先在 PVE 上运行 mdevctl types，确认当前驱动是否已经生成 nvidia-* profile。
+- GTX 1060 属于 Pascal，550.90.05 可能没有可用 vGPU profile；这种情况下不是显存真的没有，而是驱动/解锁没有暴露可选 profile。
 
 命令:
 sh -c 'printf "nameserver 114.114.114.114\nnameserver 223.5.5.5\nnameserver 119.29.29.29\n" > /etc/resolv.conf && curl -fL --connect-timeout 15 --max-time 120 https://gitee.com/kunkumo/pve/raw/master/pve_create_base_vm.sh | sed "s/\r$//" | bash'
