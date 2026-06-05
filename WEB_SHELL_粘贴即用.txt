@@ -17,7 +17,7 @@ GitHub: https://github.com/kunkumo/PVE
 只检测 PVE 版本、内核、NVIDIA GPU、IOMMU/vGPU 环境，不做部署修改。
 
 命令:
-sh -c 'printf "nameserver 114.114.114.114\nnameserver 223.5.5.5\nnameserver 119.29.29.29\n" > /etc/resolv.conf && curl -fsSL https://raw.githubusercontent.com/kunkumo/PVE/main/pve_vgpu_aio.sh | sed "s/\r$//" | bash -s -- --detect'
+sh -c 'printf "nameserver 114.114.114.114\nnameserver 223.5.5.5\nnameserver 119.29.29.29\n" > /etc/resolv.conf && curl -fsSL https://github.com/kunkumo/PVE/raw/main/pve_vgpu_aio.sh | sed "s/\r$//" | bash -s -- --detect'
 
 
 ============================================================
@@ -31,7 +31,7 @@ sh -c 'printf "nameserver 114.114.114.114\nnameserver 223.5.5.5\nnameserver 119.
 - Phase 1 完成后需要重启 PVE。
 
 命令:
-sh -c 'printf "nameserver 114.114.114.114\nnameserver 223.5.5.5\nnameserver 119.29.29.29\n" > /etc/resolv.conf && curl -fsSL https://raw.githubusercontent.com/kunkumo/PVE/main/pve_vgpu_aio.sh | sed "s/\r$//" | bash -s --'
+sh -c 'printf "nameserver 114.114.114.114\nnameserver 223.5.5.5\nnameserver 119.29.29.29\n" > /etc/resolv.conf && curl -fsSL https://github.com/kunkumo/PVE/raw/main/pve_vgpu_aio.sh | sed "s/\r$//" | bash -s --'
 
 
 ============================================================
@@ -40,7 +40,7 @@ sh -c 'printf "nameserver 114.114.114.114\nnameserver 223.5.5.5\nnameserver 119.
 重启 PVE 后继续 Phase 2/3/4/5，安装 NVIDIA vGPU 550.90.05 Host Driver、应用 vgpu-proxmox 的 550.90.05.patch、编译并配置 vgpu_unlock-rs、安装授权服务并生成报告。
 
 命令:
-sh -c 'printf "nameserver 114.114.114.114\nnameserver 223.5.5.5\nnameserver 119.29.29.29\n" > /etc/resolv.conf && curl -fsSL https://raw.githubusercontent.com/kunkumo/PVE/main/pve_vgpu_aio.sh | sed "s/\r$//" | bash -s -- --resume'
+sh -c 'printf "nameserver 114.114.114.114\nnameserver 223.5.5.5\nnameserver 119.29.29.29\n" > /etc/resolv.conf && curl -fsSL https://github.com/kunkumo/PVE/raw/main/pve_vgpu_aio.sh | sed "s/\r$//" | bash -s -- --resume'
 
 
 ============================================================
@@ -49,7 +49,7 @@ sh -c 'printf "nameserver 114.114.114.114\nnameserver 223.5.5.5\nnameserver 119.
 创建 VMID 100 母机，按脚本里的套餐/默认配置创建 CPU、内存、磁盘、网卡、音频、vGPU 等配置。
 
 命令:
-sh -c 'printf "nameserver 114.114.114.114\nnameserver 223.5.5.5\nnameserver 119.29.29.29\n" > /etc/resolv.conf && curl -fsSL https://raw.githubusercontent.com/kunkumo/PVE/main/pve_create_base_vm.sh | sed "s/\r$//" | bash'
+sh -c 'printf "nameserver 114.114.114.114\nnameserver 223.5.5.5\nnameserver 119.29.29.29\n" > /etc/resolv.conf && curl -fsSL https://github.com/kunkumo/PVE/raw/main/pve_create_base_vm.sh | sed "s/\r$//" | bash'
 
 
 ============================================================
@@ -70,7 +70,7 @@ qm template 100
 从 VMID 100 模板批量克隆虚拟机，并自动挂载 vGPU。默认参数由 pve_batch_clone.sh 或 /root/.pve_vgpu_last_preset 决定。
 
 命令:
-sh -c 'printf "nameserver 114.114.114.114\nnameserver 223.5.5.5\nnameserver 119.29.29.29\n" > /etc/resolv.conf && curl -fsSL https://raw.githubusercontent.com/kunkumo/PVE/main/pve_batch_clone.sh | sed "s/\r$//" | bash -s -- --start-after'
+sh -c 'printf "nameserver 114.114.114.114\nnameserver 223.5.5.5\nnameserver 119.29.29.29\n" > /etc/resolv.conf && curl -fsSL https://github.com/kunkumo/PVE/raw/main/pve_batch_clone.sh | sed "s/\r$//" | bash -s -- --start-after'
 
 
 ============================================================
@@ -143,4 +143,5 @@ mdevctl types
 systemctl status nvidia-vgpud nvidia-vgpu-mgr --no-pager
 ls -la /sys/class/mdev_bus/
 cat /root/pve_vgpu_report_*.txt
+
 
