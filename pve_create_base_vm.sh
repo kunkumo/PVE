@@ -15,7 +15,7 @@ STORAGE="${STORAGE:-local}"
 BRIDGE="${BRIDGE:-vmbr0}"
 NET_MODEL="${NET_MODEL:-e1000}"
 MACHINE="${MACHINE:-q35}"
-BIOS="${BIOS:-seabios}"
+BIOS="${BIOS:-}"
 VM_OSTYPE="${VM_OSTYPE:-win11}"
 ISO="${ISO:-auto}"
 CPU_MODEL_ID="${CPU_MODEL_ID:-Intel(R) Core(TM) i7-6700K CPU @ 4.00GHz}"
@@ -32,6 +32,7 @@ ORIG_ARGC="$#"
 CLONE_START="101"
 CLONE_END="106"
 PRESET_NAME="6核/8G/1G/6开"
+BIOS_EXPLICIT=0
 
 log(){ echo "[$(date '+%F %T')] $*"; }
 err(){ echo "[ERROR] $*" >&2; }
@@ -231,14 +232,81 @@ apply_preset(){
 }
 
 select_preset_interactive(){
-  echo
-  echo "请选择母机/克隆规格："
-  echo "  1 / A) CPU 6核  | 硬盘 256G | 内存 8G  | 显存 1G   | 克隆 101-106 共6台"
-  echo "  2 / B) CPU 8核  | 硬盘 256G | 内存 12G | 显存 1.2G | 克隆 101-105 共5台"
-  echo "  3 / C) CPU 12核 | 硬盘 256G | 内存 16G | 显存 2G   | 克隆 101-103 共3台"
-  echo
-  read -rp "请输入 1/2/3 或 A/B/C: " PRESET
+  {
+    echo
+    echo "请选择母机/克隆规格："
+    echo "  1 / A) CPU 6核  | 硬盘 256G | 内存 8G  | 显存 1G   | 克隆 101-106 共6台"
+    echo "  2 / B) CPU 8核  | 硬盘 256G | 内存 12G | 显存 1.2G | 克隆 101-105 共5台"
+    echo "  3 / C) CPU 12核 | 硬盘 256G | 内存 16G | 显存 2G   | 克隆 101-103 共3台"
+    echo
+  } > /dev/tty 2>/dev/null || {
+    echo
+    echo "请选择母机/克隆规格："
+    echo "  1 / A) CPU 6核  | 硬盘 256G | 内存 8G  | 显存 1G   | 克隆 101-106 共6台"
+    echo "  2 / B) CPU 8核  | 硬盘 256G | 内存 12G | 显存 1.2G | 克隆 101-105 共5台"
+    echo "  3 / C) CPU 12核 | 硬盘 256G | 内存 16G | 显存 2G   | 克隆 101-103 共3台"
+    echo
+  }
+  PRESET="$(ask_tty "请输入 1/2/3 或 A/B/C: ")"
   apply_preset "$PRESET"
+}
+
+ask_tty(){
+  local prompt="$1" answer=""
+  if [ -r /dev/tty ] && [ -w /dev/tty ]; then
+    printf "%s" "$prompt" > /dev/tty
+    IFS= read -r answer < /dev/tty || true
+  elif [ -t 0 ]; then
+    read -rp "$prompt" answer || true
+  fi
+  echo "$answer"
+}
+
+select_bios_interactive(){
+  local choice
+  echo > /dev/tty 2>/dev/null || true
+  {
+    echo "请选择母机 BIOS 启动方式："
+    echo "  1) OVMF / UEFI  推荐：Win11、现代系统、直通兼容性更好"
+    echo "  2) SeaBIOS      传统 BIOS：兼容旧系统/旧工具"
+    echo
+  } > /dev/tty 2>/dev/null || {
+    echo
+    echo "请选择母机 BIOS 启动方式："
+    echo "  1) OVMF / UEFI  推荐：Win11、现代系统、直通兼容性更好"
+    echo "  2) SeaBIOS      传统 BIOS：兼容旧系统/旧工具"
+    echo
+  }
+
+  while true; do
+    choice="$(ask_tty "请输入 1/2，直接回车默认 1(OVMF): ")"
+    case "${choice:-1}" in
+      1|ovmf|OVMF|uefi|UEFI)
+        BIOS="ovmf"
+        MACHINE="${MACHINE:-q35}"
+        log "已选择 BIOS: OVMF / UEFI"
+        return 0
+        ;;
+      2|sea|Sea|seabios|SeaBIOS|legacy|Legacy)
+        BIOS="seabios"
+        MACHINE="${MACHINE:-q35}"
+        log "已选择 BIOS: SeaBIOS"
+        return 0
+        ;;
+      *)
+        echo "  → 无效选择，请输入 1 或 2" > /dev/tty 2>/dev/null || echo "  → 无效选择，请输入 1 或 2"
+        ;;
+    esac
+  done
+}
+
+normalize_bios(){
+  case "${BIOS,,}" in
+    ovmf|uefi) BIOS="ovmf" ;;
+    sea|seabios|legacy) BIOS="seabios" ;;
+    "") BIOS="seabios" ;;
+    *) err "无效 BIOS: $BIOS，只能用 ovmf/uefi 或 seabios/sea"; exit 1 ;;
+  esac
 }
 
 usage(){
@@ -262,6 +330,7 @@ cat <<'EOF'
   --data-disk GB        第二块数据盘 sata1，默认 256G
   --storage NAME        PVE 存储，默认 local
   --gpu PCI             指定 NVIDIA GPU PCI；不填则自动选择
+  --bios ovmf|seabios   指定 BIOS；不指定且可交互时会询问
 EOF
 }
 while [ $# -gt 0 ]; do
@@ -283,7 +352,7 @@ while [ $# -gt 0 ]; do
     --bridge) BRIDGE="$2"; shift 2;;
     --net) NET_MODEL="$2"; shift 2;;
     --machine) MACHINE="$2"; shift 2;;
-    --bios) BIOS="$2"; shift 2;;
+    --bios) BIOS="$2"; BIOS_EXPLICIT=1; shift 2;;
     --ostype) VM_OSTYPE="$2"; shift 2;;
     --iso) ISO="$2"; shift 2;;
     --cpu-model) CPU_MODEL_ID="$2"; shift 2;;
@@ -297,8 +366,14 @@ done
 
 if [ -n "$PRESET" ]; then
   apply_preset "$PRESET"
-elif { [ "$ORIG_ARGC" = "0" ] || [ "$SHOW_MENU" = "1" ]; } && [ -t 0 ]; then
+elif { [ "$ORIG_ARGC" = "0" ] || [ "$SHOW_MENU" = "1" ]; } && { [ -t 0 ] || [ -r /dev/tty ]; }; then
   select_preset_interactive
+fi
+
+if [ "$BIOS_EXPLICIT" = "0" ] && { [ "$ORIG_ARGC" = "0" ] || [ "$SHOW_MENU" = "1" ]; } && { [ -t 0 ] || [ -r /dev/tty ]; }; then
+  select_bios_interactive
+else
+  normalize_bios
 fi
 
 [ "${EUID}" -eq 0 ] || { err "请用 root 执行"; exit 1; }
@@ -309,12 +384,16 @@ grep -q "114.114.114.114" /etc/resolv.conf 2>/dev/null || printf "nameserver 114
 resolve_iso
 prepare_disk_models
 
-log "创建母机 VMID=$VMID NAME=$NAME CPU=$CPU MEM=${MEMORY_MB}MB BOOT=${BOOT_DISK_GB}G DATA=${DATA_DISK_GB}G"
+log "创建母机 VMID=$VMID NAME=$NAME CPU=$CPU MEM=${MEMORY_MB}MB BOOT=${BOOT_DISK_GB}G DATA=${DATA_DISK_GB}G BIOS=${BIOS} MACHINE=${MACHINE}"
 log "硬盘伪装: sata0=${DISK0_MODEL}${DISK1_MODEL:+ / sata1=${DISK1_MODEL}}"
 qm create "$VMID" --name "$NAME" --memory "$MEMORY_MB" --balloon 0 --sockets 1 --cores "$CPU" --cpu host \
   --bios "$BIOS" --machine "$MACHINE" --vga std --numa 0 --ostype "$VM_OSTYPE" \
   --scsihw virtio-scsi-single --net0 "${NET_MODEL}=$(rand_mac),bridge=${BRIDGE},firewall=1" \
   --audio0 device=ich9-intel-hda,driver=none
+
+if [ "$BIOS" = "ovmf" ]; then
+  qm set "$VMID" --efidisk0 "${STORAGE}:1,efitype=4m,pre-enrolled-keys=0"
+fi
 
 qm set "$VMID" --args "$(build_args)"
 if [ "$ATTACH_GPU" = "1" ]; then
@@ -352,6 +431,8 @@ VGPU_VRAM=$VGPU_VRAM
 GPU_PCI=$GPU_PCI
 MDEV_PROFILE=$MDEV_PROFILE
 NAME_PREFIX=A1
+BIOS=$BIOS
+MACHINE=$MACHINE
 EOF
 
 log "完成：母机已按套餐生成，并写入随机 args / SMBIOS / serial / MAC。"
