@@ -586,6 +586,26 @@ fetch_driver_patch() {
     fi
 }
 
+cleanup_nvidia_installer_state() {
+    log "检查 NVIDIA 安装器残留状态..."
+
+    if [ "$APPLY" != "1" ]; then
+        run_cmd rm -rf /var/lib/nvidia
+        run_cmd mkdir -p /var/lib/nvidia
+        return 0
+    fi
+
+    if [ -e /var/lib/nvidia/log ] || [ -d /var/lib/nvidia ]; then
+        local backup_dir="/root/nvidia-installer-state-backup-$(date +%Y%m%d_%H%M%S)"
+        mkdir -p "$backup_dir"
+        cp -a /var/lib/nvidia "$backup_dir/" 2>/dev/null || true
+        rm -rf /var/lib/nvidia
+        log "已备份并清理 NVIDIA 安装器残留: $backup_dir"
+    fi
+
+    mkdir -p /var/lib/nvidia
+}
+
 install_nvidia_driver() {
     local driver_path="${DRIVER_CACHE}/${NVIDIA_DRIVER_FILE}"
     local script_dir bundled_driver
@@ -635,6 +655,7 @@ install_nvidia_driver() {
 
     if [ "$APPLY" = "1" ]; then
         chmod +x "$driver_path"
+        cleanup_nvidia_installer_state
 
         local patch_path="${VGPU_PROXMOX_DIR}/${NVIDIA_PATCH_FILE}"
         local custom_driver="${driver_path//-vgpu-kvm.run/-vgpu-kvm-custom.run}"
@@ -648,7 +669,9 @@ install_nvidia_driver() {
             # 检查补丁是否成功生成了 custom.run
             if [ -f "$custom_driver" ]; then
                 log "补丁应用成功, 安装 custom 驱动: ${custom_driver##*/}"
-                run_cmd bash "$custom_driver" --dkms -m=kernel
+                chmod +x "$custom_driver"
+                cleanup_nvidia_installer_state
+                run_cmd bash "$custom_driver" --silent --accept-license --dkms -m=kernel
             else
                 err "补丁应用失败! 未生成 custom.run 文件"
                 err "请检查驱动版本是否与补丁匹配: ${NVIDIA_DRIVER_VER} ↔ ${NVIDIA_PATCH_FILE}"
@@ -671,7 +694,7 @@ install_nvidia_driver() {
         log "NVIDIA 驱动安装完成!"
     else
         run_cmd bash "$driver_path" --apply-patch "${VGPU_PROXMOX_DIR}/${NVIDIA_PATCH_FILE}"
-        run_cmd bash "$driver_path" --dkms
+        run_cmd bash "$driver_path" --silent --accept-license --dkms
     fi
 }
 
