@@ -35,7 +35,7 @@ NVIDIA_PATCH_FILE="${NVIDIA_DRIVER_VER}.patch"
 # --- 驱动下载地址 ---
 # 优先使用脚本同目录下 NVIDIA-GRID-*/Host_Drivers/ 中的本地驱动；
 # 若只 curl 单脚本执行，则回退到 GitHub raw 下载。
-DRIVER_DOWNLOAD_URL="https://github.com/kunkumo/PVE/raw/main/NVIDIA-GRID-Linux-KVM-550.90.05-550.90.07-552.55/Host_Drivers/NVIDIA-Linux-x86_64-550.90.05-vgpu-kvm.run"
+DRIVER_DOWNLOAD_URL="https://gitee.com/kunkumo/pve/raw/master/NVIDIA-GRID-Linux-KVM-550.90.05-550.90.07-552.55/Host_Drivers/NVIDIA-Linux-x86_64-550.90.05-vgpu-kvm.run"
 
 # --- 仓库地址 ---
 VGPU_UNLOCK_RS_REPO="https://github.com/mbilker/vgpu_unlock-rs.git"
@@ -1272,3 +1272,4 @@ main() {
 }
 
 main "$@"
+
