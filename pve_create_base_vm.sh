@@ -24,6 +24,8 @@ DISK1_MODEL="${DISK1_MODEL:-}"
 GPU_PCI="${GPU_PCI:-}"
 MDEV_PROFILE="${MDEV_PROFILE:-}"
 VGPU_VRAM="${VGPU_VRAM:-1}"
+GPU_VENDOR_ID="${GPU_VENDOR_ID:-0x10DE}"
+GPU_DEVICE_ID="${GPU_DEVICE_ID:-0x1C31}"
 ATTACH_GPU="${ATTACH_GPU:-1}"
 DO_TEMPLATE="${DO_TEMPLATE:-0}"
 PRESET="${PRESET:-}"
@@ -395,6 +397,8 @@ cat <<'EOF'
   --storage NAME        PVE 存储，默认 local
   --gpu PCI             指定 NVIDIA GPU PCI；不填则自动选择
   --vram 1|1200M|2G     指定 vGPU 显存；不指定且可交互时会询问
+  --gpu-vendor-id HEX   vGPU PCI 供应商 ID，默认 0x10DE
+  --gpu-device-id HEX   vGPU PCI 设备 ID，默认 0x1C31 (Quadro P2200)
   --bios ovmf|seabios   指定 BIOS；不指定且可交互时会询问
 EOF
 }
@@ -412,6 +416,8 @@ while [ $# -gt 0 ]; do
     --gpu) GPU_PCI="$2"; shift 2;;
     --mdev) MDEV_PROFILE="$2"; shift 2;;
     --vram|--vram-gb) VGPU_VRAM="$2"; VRAM_EXPLICIT=1; shift 2;;
+    --gpu-vendor-id) GPU_VENDOR_ID="$2"; shift 2;;
+    --gpu-device-id) GPU_DEVICE_ID="$2"; shift 2;;
     --no-gpu) ATTACH_GPU=0; shift;;
     --attach-gpu) ATTACH_GPU=1; shift;;
     --bridge) BRIDGE="$2"; shift 2;;
@@ -469,7 +475,12 @@ fi
 qm set "$VMID" --args "$(build_args)"
 if [ "$ATTACH_GPU" = "1" ]; then
   resolve_vgpu_profile
-  qm set "$VMID" --hostpci0 "${GPU_PCI},mdev=${MDEV_PROFILE},pcie=1"
+  HOSTPCI0_OPTS="${GPU_PCI},mdev=${MDEV_PROFILE},pcie=1"
+  if [ -n "$GPU_VENDOR_ID" ] && [ -n "$GPU_DEVICE_ID" ]; then
+    HOSTPCI0_OPTS="${HOSTPCI0_OPTS},vendor-id=${GPU_VENDOR_ID},device-id=${GPU_DEVICE_ID}"
+    log "vGPU PCI ID 伪装: vendor-id=${GPU_VENDOR_ID}, device-id=${GPU_DEVICE_ID}"
+  fi
+  qm set "$VMID" --hostpci0 "$HOSTPCI0_OPTS"
   qm set "$VMID" --vga std
 else
   log "按 --no-gpu 跳过 vGPU 挂载"
